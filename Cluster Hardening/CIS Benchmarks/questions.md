@@ -167,3 +167,14 @@ ps aux | grep kubelet | grep client-ca-file
 cat /var/lib/kubelet/config.yaml | grep clientCA
 ```
 
+**Key Commands**
+```
+# Run against master
+kube-bench run --targets master
+
+# Run against node
+kube-bench run --targets node
+
+# Run a specific check by ID
+kube-bench run --targets master --check 1.3.2
+```

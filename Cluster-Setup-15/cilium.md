@@ -40,6 +40,7 @@ kubectl get svc database -n team-orange -o yaml | grep -A 5 selector
 ```
 
 **Policy 1 — p1 (Layer 3: Deny messenger → database)**
+
 Layer 3 = based on pod identity/labels (no port/protocol specification).
 ```
 cat > p1.yaml << 'EOF'
@@ -64,7 +65,9 @@ kubectl apply -f p1.yaml
 Note: Refer document: https://docs.cilium.io/en/stable/security/policy/layer3/#simple-egress-deny
 
 **Policy 2 — p2 (Layer 4: Deny ICMP transmitter → database)**
+
 Layer 4 = based on protocol/port. Here we deny ICMP specifically.
+
 First get the transmitter pod labels:
 ```
 kubectl get deployment transmitter -n team-orange \
@@ -98,6 +101,7 @@ kubectl apply -f p2.yaml
 Note: Refer document: https://docs.cilium.io/en/stable/security/policy/layer4/#example-icmp-icmpv6
 
 **Policy 3 — p3 (Layer 3: Mutual Authentication database → messenger)**
+
 Mutual Authentication in Cilium uses the ``authentication`` field:
 ```
 cat > p3.yaml << 'EOF'
@@ -136,6 +140,7 @@ kubectl get ciliumnetworkpolicy -n team-orange
 ```
 
 **Step 4 — Verify policies are working**
+
 Test p1 — messenger should NOT reach database:
 ```
 # Get a messenger pod name

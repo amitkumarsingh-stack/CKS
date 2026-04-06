@@ -77,7 +77,7 @@ kubectl exec -it <any-pod> -- sh -c "echo test >> /etc/passwd"
 
 cat /var/log/syslog | grep "Write to /etc/passwd"
 ```
-
+------------------------------------------------------------
 **Question3**: Using Falco on ``node01``, identify which Pod is accessing sensitive files under ``/proc`` on the host. Scale down that Deployment to 0 replicas.
 
 #### Step 1: Find the offending events
@@ -122,8 +122,8 @@ kubectl scale deployment <deployment-name> -n <namespace> --replicas=0
 # Verify
 kubectl get pods -n <namespace>
 ```
-
-**Question3**: A pod in the ``crypto-monitor`` namespace is suspected of running crypto-mining software.
+------------------------------------------------------------
+**Question4**: A pod in the ``crypto-monitor`` namespace is suspected of running crypto-mining software.
 Create a Falco rule that detects the execution of known mining processes like ``xmrig``,`` minerd``, or ``cpuminer``.
 The rule should be added to ``/etc/falco/falco_rules.local.yaml`` with below specs:
 
@@ -216,5 +216,4 @@ Then check Falco logs for alerts
 ```
 falco -U | tail -20 | grep "MINING_ALERT"
 ```
-
-
+------------------------------------------------------------

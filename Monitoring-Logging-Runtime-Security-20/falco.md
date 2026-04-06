@@ -123,3 +123,98 @@ kubectl scale deployment <deployment-name> -n <namespace> --replicas=0
 kubectl get pods -n <namespace>
 ```
 
+**Question3**: A pod in the ``crypto-monitor`` namespace is suspected of running crypto-mining software.
+Create a Falco rule that detects the execution of known mining processes like ``xmrig``,`` minerd``, or ``cpuminer``.
+The rule should be added to ``/etc/falco/falco_rules.local.yaml`` with below specs:
+
+1. Trigger when any of these processes are executed: ``xmrig``, ``minerd``, ``cpuminer``
+Set the priority to ``CRITICAL``
+2. Output the format: ``MINING_ALERT: %evt.time,%container.name,%proc.name``
+3. Tag the events with ``[container, crypto_mining, mitre_execution]``
+
+Make sure the rule persists across Falco updates by adding it to the local rules file.
+
+## Solution
+**Step 1: Check the status of Falco Service**
+```
+systemctl status falco
+```
+
+**Step 2 — Check existing rules for reference (good habit)**
+```
+cat /etc/falco/falco_rules.yaml | grep proc.name -A 10 -B 10
+```
+Here you can just copy the matching rule to file ``/etc//falco/falco_rules.local.yaml``
+
+Always make sure that you write the new rules to ``/etc//falco/falco_rules.local.yaml``
+
+**Step 3: Write the rule to local rules files**
+```
+- rule: Detect Crypto Mining Process
+  desc: Detects execution of known crypto mining processes inside containers
+  condition: >
+    container.id != host
+    and evt.type = execve
+    and proc.name in (xmrig, minerd, cpuminer)
+  output: >
+    MINING_ALERT: %evt.time,%container.name,%proc.name
+  priority: CRITICAL
+  tags: [container, crypto_mining, mitre_execution]
+```
+Refer document https://falco.org/docs/concepts/rules/basic-elements/ for writing the rule
+
+Rule Field Breakdown
+```
+condition: >
+  container.id != host          # only trigger inside containers
+                                # (not on host processes)
+  and evt.type = execve         # when a process is EXECUTED
+                                # (not just running)
+  and proc.name in              # process name matches any of:
+    (xmrig, minerd, cpuminer)   # the known mining tools
+
+output: >
+  MINING_ALERT:                 # literal prefix string
+  %evt.time,                    # timestamp with nanoseconds
+  %container.name,              # name of the container
+  %proc.name                    # name of the executed process
+
+priority: CRITICAL              # highest severity level
+
+tags:
+  - container                   # relates to container activity
+  - crypto_mining               # custom tag for this threat type
+  - mitre_execution             # MITRE ATT&CK: Execution tactic
+```
+
+**Step 4- Restart Falco to load the new rules**
+```
+systemctl restart falco
+
+# Verify it started without errors
+systemctl status falco
+
+# Check the rule loaded in logs
+journalctl -u falco | tail -20 | grep -i "crypto\|mining\|error"
+
+OR
+
+falco -U | tail -20 | grep -i "crypto\|mining\|error"
+```
+
+**Step 5 — Test the rule is working**
+```
+# Get a pod in crypto-monitor namespace
+kubectl get pods -n crypto-monitor
+
+# Exec into a pod and simulate running a mining process
+kubectl exec -n crypto-monitor <pod-name> -- \
+  sh -c "echo simulating; ls /tmp/xmrig 2>/dev/null || true"
+```
+
+Then check Falco logs for alerts
+```
+falco -U | tail -20 | grep "MINING_ALERT"
+```
+
+

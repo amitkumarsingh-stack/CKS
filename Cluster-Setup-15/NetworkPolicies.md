@@ -257,5 +257,132 @@ kubectl exec -n threat-prevention <pod-name> -- \
   curl -m 5 http://10.0.0.1
 # Expected: Response or connection refused (not timeout) ✅
 ```
+-------------------------------------
 
+**Question 3**: The ``web-apps`` namespace contains a frontend application that should only be accessible from specific sources.
+Create a NetworkPolicy that:
 
+1. Allows ingress traffic to pods with label app: frontend ONLY from:
+    * Pods in the same namespace with label app: backend
+    * Any pod in the monitoring namespace
+
+2. Blocks all other ingress traffic to the frontend pods
+3. Does not affect egress traffic
+
+The policy should be named frontend-access and should apply to the ``web-app``s namespace.
+Verify that the policy correctly allows and blocks traffic as specified.
+
+## Solution
+Key Concept Before Starting
+```
+Who can reach frontend pods (app: frontend)?
+
+  ✅ Pods with label app: backend  (same namespace: web-apps)
+  ✅ ANY pod from monitoring namespace
+  ❌ Everything else (other namespaces, internet, other pods)
+
+Egress from frontend pods → completely unaffected
+```
+
+**Step 1 — Investigate the existing setup**
+```
+# Check namespace exists
+kubectl get namespace web-apps
+kubectl get namespace monitoring
+
+# Check pods and their labels
+kubectl get pods -n web-apps --show-labels
+
+# Verify frontend pods exist
+kubectl get pods -n web-apps -l app=frontend
+
+# Check monitoring namespace has the right label
+# (needed for namespaceSelector)
+kubectl get namespace monitoring --show-labels
+```
+
+**Step 2 — Label the monitoring namespace if needed**
+```
+# Check if monitoring namespace has a label
+kubectl get namespace monitoring -o yaml | grep labels -A 5
+
+# If no useful label exists, add one
+kubectl label namespace monitoring \
+  kubernetes.io/metadata.name=monitoring
+
+# Verify
+kubectl get namespace monitoring --show-labels
+```
+
+**Step 3 — Create the NetworkPolicy**
+```
+cat > frontend-access.yaml << 'EOF'
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: frontend-access
+  namespace: web-apps
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend              # applies TO frontend pods only
+
+  policyTypes:
+  - Ingress                      # only affects ingress, NOT egress
+
+  ingress:
+
+  # Rule 1: Allow from backend pods in SAME namespace
+  - from:
+    - podSelector:
+        matchLabels:
+          app: backend           # pods with app=backend label
+                                 # implicitly same namespace (web-apps)
+
+  # Rule 2: Allow from ANY pod in monitoring namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: monitoring   # monitoring namespace
+EOF
+
+kubectl apply -f frontend-access.yaml
+```
+
+**Step 5 — Test the policy**
+Test 1 — Backend pod SHOULD reach frontend:
+```
+# Get a backend pod
+kubectl get pods -n web-apps -l app=backend
+
+# Should SUCCEED
+kubectl exec -n web-apps <backend-pod> -- \
+  curl -m 5 http://<frontend-pod-ip>:80
+
+# Expected: HTML response ✅
+```
+
+Test 2 — Monitoring namespace pod SHOULD reach frontend:
+```
+# Get a pod in monitoring namespace
+kubectl get pods -n monitoring
+
+# Should SUCCEED
+kubectl exec -n monitoring <any-pod> -- \
+  curl -m 5 http://<frontend-pod-ip>:80
+
+# Expected: HTML response ✅
+```
+
+Test 3 — Other namespace pods should be BLOCKED:
+```
+# Try from default namespace
+kubectl run test-blocked \
+  --image=curlimages/curl \
+  --rm -it \
+  -n default \
+  -- curl -m 5 http://<frontend-pod-ip>:80
+
+# Expected: Connection timed out ✅
+```
+------------------------------------

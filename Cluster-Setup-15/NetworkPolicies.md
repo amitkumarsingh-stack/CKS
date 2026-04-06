@@ -141,4 +141,121 @@ kubectl exec -n metadata-access <accessor-pod> -- \
 
 # Expected: Response from metadata server ✅
 ```
+---------------------------------------
+
+**Question 2**: A security team has identified that pods in the ``threat-prevention`` namespace are attempting to connect to known malicious IP ranges used for command and control servers.
+Create a NetworkPolicy that:
+
+1. Blocks ALL egress traffic to the following malicious CIDR ranges:
+    * 192.168.100.0/24
+    * 10.0.99.0/24
+
+2. Allows DNS traffic (UDP and TCP port 53) to ensure basic network functionality
+3. Allows all other egress traffic except the blocked malicious ranges
+4. Applies to all pods in the threat-prevention namespace
+
+The policy should be named ``block-malicious-egress`` and should not affect ingress traffic.
+
+## Solution
+Key Concept Before Starting
+This question has 3 egress rules that must work together:
+```
+All Pods egress traffic
+      │
+      ├── To 192.168.100.0/24  → BLOCK ❌
+      ├── To 10.0.99.0/24      → BLOCK ❌
+      ├── To port 53 UDP/TCP   → ALLOW ✅ (DNS)
+      └── Everything else      → ALLOW ✅
+```
+
+**Step 1 — Switch context and check namespace**
+```
+kubectl get pods -n threat-prevention --show-labels
+```
+
+Sample Policy
+```
+egress:
+- to:                         # Rule 1: Allow DNS
+  ports:
+  - port 53 UDP
+  - port 53 TCP
+
+- to:                         # Rule 2: Allow everything except bad IPs
+  - ipBlock:
+      cidr: 0.0.0.0/0
+      except:
+      - 192.168.100.0/24
+      - 10.0.99.0/24
+```
+Refer document : https://kubernetes.io/docs/concepts/services-networking/network-policies/#networkpolicy-resource
+
+**Step 3 — Create the NetworkPolicy**
+```
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: block-malicious-egress
+  namespace: threat-prevention
+spec:
+  podSelector: {}              # applies to ALL pods in namespace
+  policyTypes:
+  - Egress                     # only affects egress, NOT ingress
+  egress:
+
+  # Rule 1: Allow DNS (UDP + TCP port 53)
+  # Without this pods can't resolve hostnames
+  - ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+
+  # Rule 2: Allow all egress EXCEPT the two malicious CIDR ranges
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0        # all IPs
+        except:
+        - 192.168.100.0/24     # block malicious range 1
+        - 10.0.99.0/24         # block malicious range 2
+```
+
+**Step 4 — Verify the policy was created**
+```
+kubectl get networkpolicy -n threat-prevention
+```
+
+**Step 5 — Test the policy**
+Test 1 — Malicious IPs should be BLOCKED:
+```
+kubectl get pods -n threat-prevention
+
+# Try to reach malicious IP — should FAIL
+kubectl exec -n threat-prevention <pod-name> -- \
+  curl -m 5 http://192.168.100.1
+# Expected: curl: (28) Connection timed out ✅
+
+kubectl exec -n threat-prevention <pod-name> -- \
+  curl -m 5 http://10.0.99.1
+# Expected: curl: (28) Connection timed out ✅
+```
+
+Test 2 — DNS should still work:
+```
+kubectl exec -n threat-prevention <pod-name> -- \
+  nslookup kubernetes.default.svc.cluster.local
+# Expected: Valid DNS response ✅
+```
+
+Test 3 — Other traffic should still work:
+```
+kubectl exec -n threat-prevention <pod-name> -- \
+  curl -m 5 http://8.8.8.8
+# Expected: Response received ✅
+
+kubectl exec -n threat-prevention <pod-name> -- \
+  curl -m 5 http://10.0.0.1
+# Expected: Response or connection refused (not timeout) ✅
+```
+
 

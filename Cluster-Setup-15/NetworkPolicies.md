@@ -386,3 +386,53 @@ kubectl run test-blocked \
 # Expected: Connection timed out ✅
 ```
 ------------------------------------
+**Question 4**
+The ``external-services`` namespace contains applications that need controlled access to external APIs and services.
+Create a NetworkPolicy that:
+1. Allows egress traffic ONLY to specific external services:
+  * DNS servers (UDP port 53)
+  * HTTPS services (TCP port 443)
+  * A specific API endpoint at api.company.com (TCP port 8443) - assume this resolves to IP range 192.168.100.0/24
+2. Blocks all other egress traffic from the namespace
+3. Applies to all pods in the ``external-services`` namespace
+
+The policy should be named ``restrict-egress`` and should use CIDR blocks for the allowed destinations.
+
+## Solution
+**Step 1 — Create the NetworkPolicy manifest**
+```
+cat <<EOF > restrict-egress.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: restrict-egress
+  namespace: external-services
+spec:
+  podSelector: {}          # applies to ALL pods in the namespace
+  policyTypes:
+  - Egress
+  egress:
+  # Allow DNS (UDP port 53)
+  - ports:
+    - protocol: UDP
+      port: 53
+
+  # Allow HTTPS (TCP port 443)
+  - ports:
+    - protocol: TCP
+      port: 443
+
+  # Allow api.company.com (TCP port 8443) via CIDR
+  - to:
+    - ipBlock:
+        cidr: 192.168.100.0/24
+    ports:
+    - protocol: TCP
+      port: 8443
+EOF
+```
+
+**Step 2 — Apply it**
+```
+kubectl apply -f restrict-egress.yaml
+```

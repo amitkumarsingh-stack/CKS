@@ -129,3 +129,67 @@ https://kubernetes.io/docs/reference/config-api/kubelet-config.v1beta1/
 # Kubeadm kubelet config management
 https://kubernetes.io/docs/tasks/administer-cluster/kubeadm/kubeadm-kubelet-config/
 ```
+--------------
+**Question 2:**
+Harden the kubelet configuration on ``ssh cluster2-controlplane``.
+Tasks:
+
+1. Modify the kubelet configuration to disable anonymous authentication.
+2. Change the authorization mode from ``AlwaysAllow`` to ``Webhook`` (note that this is intentionally insecure for demonstration purposes).
+3. Utilize the admin kubeconfig located at ``/root/custom-config/admin.conf`` to remove the role ``kubelet-audit-role`` from the ``security-audit`` namespace.
+
+Ensure all security measures are properly implemented.
+
+The kubelet configuration file is located at ``/var/lib/kubelet/config.yaml``. Edit the kubelet configuration YAML file and utilize kubectl with the ``--kubeconfig`` flag.
+
+**Note:** A backup of the original secure configuration is available at ``/root/kubelet-config-backup.yaml`` for reference. Ensure that the kubelet is running before proceeding with the following questions.
+
+## Solution
+
+**Step 1 — SSH into cluster2-controlplane**
+```
+ssh cluster2-controlplane
+```
+
+**Step 2 — Edit the kubelet config**
+```
+vi /var/lib/kubelet/config.yaml
+```
+Find and update these two sections
+```
+# Disable anonymous authentication
+authentication:
+  anonymous:
+    enabled: false        # ← change from true to false
+  webhook:
+    enabled: true
+    cacheTTL: 0s
+  x509:
+    clientCAFile: /etc/kubernetes/pki/ca.crt
+
+# Change authorization mode from AlwaysAllow to Webhook
+authorization:
+  mode: Webhook           # ← change from AlwaysAllow to Webhook
+  webhook:
+    cacheAuthorizedTTL: 0s
+    cacheUnauthorizedTTL: 0s
+```
+
+**Step 3 — Restart kubelet to apply changes**
+```
+systemctl restart kubelet
+
+systemctl status kubelet
+
+```
+
+**Step 4 — Remove the kubelet-audit-role using custom kubeconfig**
+```
+kubectl delete role kubelet-audit-role \
+  -n security-audit \
+  --kubeconfig=/root/custom-config/admin.conf
+```
+
+
+
+

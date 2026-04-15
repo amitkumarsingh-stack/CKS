@@ -35,7 +35,7 @@ FROM gcr.io/distroless/base
 
 COPY ./app-server /app/server
 
-USER 65532
+USER nonroot:nonroot
 
 ENTRYPOINT ["/app/server"]
 ```

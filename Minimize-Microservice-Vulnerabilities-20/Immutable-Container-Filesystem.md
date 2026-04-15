@@ -74,3 +74,19 @@ vi patch.yaml
 ```
 kubectl patch deployment data-processor -n immutable-apps --patch-file=./patch.yaml
 ```
+
+Another way of paching te deployment (most easy)
+Refer document : https://kubernetes.io/docs/tasks/manage-kubernetes-objects/update-api-object-kubectl-patch/#use-a-strategic-merge-patch-to-update-a-deployment
+
+```
+vi patch-file.yaml
+
+
+spec:
+  template:
+    spec:
+      containers:
+      - name: processor-container
+        securityContext:
+          readOnlyRootFilesystem: true
+```

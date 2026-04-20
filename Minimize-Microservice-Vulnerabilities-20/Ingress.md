@@ -102,3 +102,66 @@ HTTP Test: This should redirect to HTTPS (308 redirect).
 curl -k -H "Host: secure-app.company.com" http://localhost:30080/
 ```
 Expected: Should show a 308 redirect to HTTPS.
+
+--------------------------------------------
+**Question 2:**
+In the galaxy namespace, a deployment ``starship-api`` is exposed by a service of the same name.
+
+Create an ingress resource named ``starship-ingress`` to route incoming traffic to the workload on path ``/api``.
+
+Use the hostname ``starship.company.com`` for the Ingress rules.
+
+Utilize the TLS certificate stored in the secret ``starship-tls`` in the galaxy namespace to enable TLS traffic on that ingress resource.
+
+The ingress should redirect all HTTP traffic to HTTPS.
+
+## Solution
+
+**Step 1: Create the Ingress**
+```
+   apiVersion: networking.k8s.io/v1
+   kind: Ingress
+   metadata:
+     name: starship-ingress
+     namespace: galaxy
+     annotations:
+       nginx.ingress.kubernetes.io/ssl-redirect: "true"
+       nginx.ingress.kubernetes.io/rewrite-target: /
+   spec:
+     ingressClassName: nginx
+     tls:
+       - hosts:
+           - starship.company.com
+         secretName: starship-tls
+     rules:
+       - host: starship.company.com
+         http:
+           paths:
+             - path: /api
+               pathType: Prefix
+               backend:
+                 service:
+                   name: starship-api
+                   port:
+                     number: 80
+```
+
+**Step 2: Check the services in the "ingress-nginx" namespace:**
+```
+kubectl get svc -n ingress-nginx
+   NAME                                 TYPE           CLUSTER-IP       EXTERNAL-IP   PORT(S)                      AGE
+   ingress-nginx-controller             LoadBalancer   172.20.96.68     <pending>     80:32746/TCP,443:31685/TCP   9m6s
+   ingress-nginx-controller-admission   ClusterIP      172.20.232.147   <none>        443/TCP                      9m6s
+```
+
+**Step 3: Test**
+Update the /etc/hosts file with the following line:
+```
+   cluster1-controlplane ~ ➜  echo "172.20.96.68 starship.company.com" | sudo tee -a /etc/hosts
+   172.20.96.68 starship.company.com
+```
+
+Finally, test the Ingress by executing the following command:
+```
+   cluster1-controlplane ~ ➜  curl -k https://starship.company.com/api
+```

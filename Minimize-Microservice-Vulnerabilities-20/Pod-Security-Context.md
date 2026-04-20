@@ -127,3 +127,94 @@ kubectl exec secure-app -n security-context -- \
 ```
 -------------------------------------------
 
+**Question 2**
+A deployment named ``api-server`` is running in the namespace ``production``. The deployment pods are failing to start.
+
+Identify the issue causing the pods to fail, and then fix the deployment.
+
+## Solution
+
+**Step 1 — Check the deployment and pod status**
+```
+kubectl get pods -n production
+kubectl get deployment api-server -n production
+```
+**Observation:** No pods have been created, and the deployment shows 0/2 replicas.
+
+**Step 2: Check Deployment Events and Conditions**
+```
+kubectl describe deployment api-server -n production
+```
+**Critical Finding:** 
+* Deployment events indicate Pod Security violations that are preventing pod creation.
+* Sometime you will not see the events in the deployments. Do check the replicaSets
+
+```
+k describe rs api-server-c6dd4bb45
+
+Events:
+  Type     Reason        Age                  From                   Message
+  ----     ------        ----                 ----                   -------
+  Warning  FailedCreate  3m24s                replicaset-controller  Error creating: pods "api-server-c6dd4bb45-tpqhw" is forbidden: violates PodSecurity "restricted:latest": privileged (container "api" must not set securityContext.privileged=true), allowPrivilegeEscalation != false (container "api" must set securityContext.allowPrivilegeEscalation=false), unrestricted capabilities (container "api" must set securityContext.capabilities.drop=["ALL"]; container "api" must not include "NET_ADMIN", "SYS_TIME" in securityContext.capabilities.add), runAsNonRoot != true (container "api" must not set securityContext.runAsNonRoot=false), runAsUser=0 (pod must not set runAsUser=0), seccompProfile (pod or container "api" must set securityContext.seccompProfile.type to "RuntimeDefault" or "Localhost")
+```
+
+**Violations Identified:**
+* ``privileged: true``
+* ``runAsNonRoot: false``
+* ``runAsUser: 0`` and ``runAsGroup: 0`` (root user)
+* Capabilities added: ``NET_ADMIN``, ``SYS_TIME``
+* Missing ``allowPrivilegeEscalation: false``
+* Missing ``seccompProfile``
+
+**Step 4: Delete and Recreate the Deployment with Correct Settings**
+```
+# Delete the broken deployment
+kubectl delete deployment api-server -n production
+
+# Create a new deployment with correct security settings
+kubectl apply -f - <<EOF
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-server
+  namespace: production
+  labels:
+    app: api-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api-server
+  template:
+    metadata:
+      labels:
+        app: api-server
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: api
+        image: nginxinc/nginx-unprivileged:1.25.3-alpine
+        ports:
+        - containerPort: 8080
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 101
+          privileged: false
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+EOF
+```
+
+Check if new pods are being created
+```
+kubectl get pods -n production -w
+```
+
+

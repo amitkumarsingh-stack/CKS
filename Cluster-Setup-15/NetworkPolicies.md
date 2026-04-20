@@ -436,3 +436,61 @@ EOF
 ```
 kubectl apply -f restrict-egress.yaml
 ```
+----------------------------------------
+**Question 5**
+Secure pods in the  ``node-security`` namespace by preventing access to the node metadata service ``(169.254.169.254)``.
+
+Tasks:
+* Create a NetworkPolicy named block-metadata-access that blocks all egress traffic to the metadata service IP
+* Ensure the policy allows all other egress traffic
+* Test that ``metadata access`` is blocked while maintaining DNS functionality
+
+Note: A test deployment metadata-test-pod is already running in the namespace for validation.
+
+## Solution
+
+**Step 1 — Create the NetworkPolicy**
+```
+cat <<EOF | kubectl apply -f -
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: block-metadata-access
+  namespace: node-security
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  # Allow DNS (UDP + TCP port 53)
+  - ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  # Allow all egress EXCEPT metadata IP
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 169.254.169.254/32
+EOF
+```
+
+**Step 2 — Test metadata access is BLOCKED**
+```
+# Exec into the test pod
+kubectl exec -n node-security deployment/metadata-test-pod -- \
+  wget -qO- --timeout=5 http://169.254.169.254/
+
+# Expected: connection timeout or refused — BLOCKED
+```
+
+**Step 3 — Test DNS still works**
+```
+kubectl exec -n node-security deployment/metadata-test-pod -- \
+  nslookup kubernetes.default.svc.cluster.local
+
+# Expected: successful DNS resolution — ALLOWED
+```
+

@@ -176,3 +176,155 @@ kubectl auth can-i create deployments --as=system:serviceaccount:ci-cd:ci-bot
 kubectl auth can-i create clusterrolebindings --as=system:serviceaccount:ci-cd:ci-bot
 kubectl auth can-i create rolebindings --as=system:serviceaccount:ci-cd:ci-bot
 ```
+---------
+
+**Question 2:**
+SSH into the ``cluster2-controlplane`` to address the following tasks:
+1. Configure the ``kube-controller-manager`` to use the ``--use-service-account-credentials`` flag.
+2. Set the ``--terminated-pod-gc-threshold`` to 50.
+
+The admin kubeconfig file for this cluster is located at:
+``/root/controller-config/admin.conf``
+
+Additionally, please utilize this kubeconfig file to delete the cluster role named ``legacy-cluster-role``.
+
+The backup of the original ``kube-controller-manager`` configuration is located at ``/tmp/kube-controller-manager-bak.yaml``. It is essential to ensure that the Controller Manager remains running for the container operations in the upcoming questions.
+
+## Solution
+**Step 1 — SSH into cluster2-controlplane**
+```
+ssh cluster2-controlplane
+```
+
+**Step 2 — Edit the kube-controller-manager manifest**
+```
+vi /etc/kubernetes/manifests/kube-controller-manager.yaml
+```
+
+Find the command section and add/update these two flags:
+```
+spec:
+  containers:
+  - command:
+    - kube-controller-manager
+    - --use-service-account-credentials=true   # ← add this
+    - --terminated-pod-gc-threshold=50         # ← add this
+    - --allocate-node-cidrs=true
+    - --authentication-kubeconfig=/etc/kubernetes/controller-manager.conf
+    # ... other existing flags remain unchanged
+```
+
+**Step 3 — Verify the Controller Manager restarts and is running**
+```
+# Watch the pod restart (it auto-restarts as a static pod)
+watch kubectl get pods -n kube-system | grep controller-manager
+
+# Should show Running within ~30-60 seconds
+kubectl get pods -n kube-system | grep controller-manager
+```
+
+**Step 4 — Delete the legacy-cluster-role using custom kubeconfig**
+```
+kubectl delete clusterrole legacy-cluster-role \
+  --kubeconfig=/root/controller-config/admin.conf
+```
+
+**Question 3:**
+Maria is a database administrator who requires varying levels of access across multiple database namespaces.
+In the production-db namespace, she must have:
+* Full access to all resources (get, list, create, update, delete, patch)
+
+In the ``staging-db`` namespace, her access should be:
+* Read-only for pods and services
+* No access to secrets or configmaps
+
+In the ``backup-db`` namespace, she should be granted:
+* Get and list permissions for persistentvolumeclaims only
+* No access to any other resources
+
+The current RBAC configuration is overprivileged. Please update the permissions to align with the principle of least privilege while retaining the same resource names.
+
+## Solution
+**Step 1 — Check existing RBAC resource names (to retain them)**
+```
+kubectl get role,rolebinding -n production-db
+kubectl get role,rolebinding -n staging-db
+kubectl get role,rolebinding -n backup-db
+```
+
+**Step 2 — Fix production-db Role (full access)**
+```
+kubectl get role -n production-db -o yaml  # note existing name
+
+cat <<EOF | kubectl apply -f -
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: maria-production-role      # use existing name from Step 1
+  namespace: production-db
+rules:
+- apiGroups: ["*"]
+  resources: ["*"]
+  verbs: ["get", "list", "create", "update", "delete", "patch"]
+EOF
+```
+
+**Step 3 — Fix staging-db Role (read-only pods and services only)**
+```
+cat <<EOF | kubectl apply -f -
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: maria-staging-role         # use existing name from Step 1
+  namespace: staging-db
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services"]  # only pods and services
+  verbs: ["get", "list"]           # read-only
+EOF
+```
+
+**Step 4 — Fix backup-db Role (get/list PVCs only)**
+```
+cat <<EOF | kubectl apply -f -
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: maria-backup-role          # use existing name from Step 1
+  namespace: backup-db
+rules:
+- apiGroups: [""]
+  resources: ["persistentvolumeclaims"]
+  verbs: ["get", "list"]
+EOF
+```
+
+**Step 5 — Verify RoleBindings still point to Maria**
+```
+# Check each namespace binding still references Maria's user/SA
+kubectl get rolebinding -n production-db -o yaml | grep -A3 "subjects"
+kubectl get rolebinding -n staging-db -o yaml | grep -A3 "subjects"
+kubectl get rolebinding -n backup-db -o yaml | grep -A3 "subjects"
+```
+
+**Step 6 — Verify permissions with auth can-i**
+```
+# production-db — all should be yes
+kubectl auth can-i create pods -n production-db --as=maria
+kubectl auth can-i delete pods -n production-db --as=maria
+kubectl auth can-i get secrets -n production-db --as=maria
+
+# staging-db — pods/services yes, secrets/configmaps no
+kubectl auth can-i get pods -n staging-db --as=maria
+kubectl auth can-i get services -n staging-db --as=maria
+kubectl auth can-i get secrets -n staging-db --as=maria      # should be NO
+kubectl auth can-i get configmaps -n staging-db --as=maria   # should be NO
+kubectl auth can-i create pods -n staging-db --as=maria      # should be NO
+
+# backup-db — only PVC get/list
+kubectl auth can-i get persistentvolumeclaims -n backup-db --as=maria
+kubectl auth can-i list persistentvolumeclaims -n backup-db --as=maria
+kubectl auth can-i get pods -n backup-db --as=maria          # should be NO
+kubectl auth can-i delete persistentvolumeclaims -n backup-db --as=maria # NO
+```
+

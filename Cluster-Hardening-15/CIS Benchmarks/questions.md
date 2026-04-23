@@ -178,3 +178,56 @@ kube-bench run --targets node
 # Run a specific check by ID
 kube-bench run --targets master --check 1.3.2
 ```
+-------------------------------------
+**Question 2**:
+
+Please exit from ``cluster2-controlplane`` and ensure that you are in ``cluster1-controlplane`` for the subsequent question.
+
+Run a CIS Benchmark scan using kube-bench and fix the etcd data directory permission issue.
+Tasks:
+1. Run kube-bench to scan the master components
+2. Identify the etcd data directory permission violations
+
+Requirements:
+1. Use kube-bench with appropriate targets to find the issue
+2. Restrict etcd directory permissions to the CIS recommended level
+3. Verify that the fix resolves the violation
+
+## Solution
+
+**Step 1 — Run kube-bench against master components**
+```
+kube-bench run --targets master | grep etcd -A 5
+```
+Results
+```
+[FAIL] 1.1.11 Ensure that the etcd data directory permissions are set to 700 or more restrictive (Automated)
+[FAIL] 1.1.12 Ensure that the etcd data directory ownership is set to etcd:etcd (Automated)
+```
+
+**Step 2: Fix the etcd Directory Permissions**
+```
+chmod 700 /var/lib/etcd
+```
+
+**Set proper ownership (if etcd user exists)**
+```
+chown etcd:etcd /var/lib/etcd 
+```
+Note: User ``etcd`` does not exists. You will have to create the user
+
+```
+groupadd --system etcd
+
+useradd --system etcd --no-create-home -- shell /sbin/nologin -gid etcd
+```
+
+```
+chown etcd:etcd /var/lib/etcd
+```
+
+Re-run kube-bench to confirm
+```
+kube-bench run --targets master 2>/dev/null | grep "1.1.12"
+# Expected: [PASS]
+```

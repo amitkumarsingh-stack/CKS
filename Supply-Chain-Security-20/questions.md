@@ -42,3 +42,87 @@ echo "f417c0555bc0167355589dd1afe23be9bf909bf98312b1025f12015d1b58a1c62c9908c006
 ```
 
 Repate the steps for all the files and delete the ones which don't match.
+
+------------------------------
+
+**Question 2**:
+A vulnerable deployment has been identified in the ``security-scanning`` namespace. Your task is to utilize the pre-configured KubeLinter configuration located at ``/root/kube-linter-config.yaml`` to identify and rectify all security issues in this deployment.
+
+Tasks:
+* Scan the vulnerable deployment using the provided KubeLinter configuration.
+* Identify all security violations present in the deployment.
+* Address and resolve the security issues identified in the deployment.
+* Verify that the revised deployment successfully passes all security checks.
+
+The vulnerable deployment can be found at ``/tmp/init/manifests/vulnerable-deployment.yaml``, and KubeLinter is pre-installed with the configuration file already set up.
+
+## Solution
+
+**Step 1 — View the KubeLinter config**
+```
+cat /root/kube-linter-config.yaml
+```
+
+**Step 2 — Run KubeLinter scan**
+```
+kubelinter lint /tmp/.init/manifests/vulnerable-deployment.yaml --config /root/kube-linter-config.yaml
+```
+Excepeted Result
+```
+/tmp/.init/manifests/vulnerable-deployment.yaml: (object: security-scanning/insecure-app apps/v1, Kind=Deployment) The container "app" is using an invalid container image, "nginx:latest". Please use images that are not blocked by the `BlockList` criteria : [".*:(latest)$" "^[^:]*$" "(.*/[^:]+)$"] (check: latest-tag, remediation: Use a container image with a specific tag other than latest.)
+
+/tmp/.init/manifests/vulnerable-deployment.yaml: (object: security-scanning/insecure-app apps/v1, Kind=Deployment) container "app" does not have a read-only root file system (check: no-read-only-root-fs, remediation: Set readOnlyRootFilesystem to true in the container securityContext.)
+
+/tmp/.init/manifests/vulnerable-deployment.yaml: (object: security-scanning/insecure-app apps/v1, Kind=Deployment) container "app" is Privileged hence allows privilege escalation. (check: privilege-escalation-container, remediation: Ensure containers do not allow privilege escalation by setting allowPrivilegeEscalation=false, privileged=false and removing CAP_SYS_ADMIN capability. See https://kubernetes.io/docs/tasks/configure-pod-container/security-context/ for more details.)
+
+/tmp/.init/manifests/vulnerable-deployment.yaml: (object: security-scanning/insecure-app apps/v1, Kind=Deployment) container "app" is privileged (check: privileged-container, remediation: Do not run your container as privileged unless it is required.)
+
+/tmp/.init/manifests/vulnerable-deployment.yaml: (object: security-scanning/insecure-app apps/v1, Kind=Deployment) container "app" is not set to runAsNonRoot (check: run-as-non-root, remediation: Set runAsUser to a non-zero number and runAsNonRoot to true in your pod or container securityContext. Refer to https://kubernetes.io/docs/tasks/configure-pod-container/security-context/ for details.)
+
+/tmp/.init/manifests/vulnerable-deployment.yaml: (object: security-scanning/insecure-app apps/v1, Kind=Deployment) container "app" has cpu request 0 (check: unset-cpu-requirements, remediation: Set CPU requests and limits for your container based on its requirements. Refer to https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/#requests-and-limits for details.)
+
+/tmp/.init/manifests/vulnerable-deployment.yaml: (object: security-scanning/insecure-app apps/v1, Kind=Deployment) container "app" has cpu limit 0 (check: unset-cpu-requirements, remediation: Set CPU requests and limits for your container based on its requirements. Refer to https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/#requests-and-limits for details.)
+
+/tmp/.init/manifests/vulnerable-deployment.yaml: (object: security-scanning/insecure-app apps/v1, Kind=Deployment) container "app" has memory request 0 (check: unset-memory-requirements, remediation: Set memory requests and limits for your container based on its requirements. Refer to https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/#requests-and-limits for details.)
+
+/tmp/.init/manifests/vulnerable-deployment.yaml: (object: security-scanning/insecure-app apps/v1, Kind=Deployment) container "app" has memory limit 0 (check: unset-memory-requirements, remediation: Set memory requests and limits for your container based on its requirements. Refer to https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/#requests-and-limits for details.)
+```
+
+**Step 3 — Fix all common violations**
+```
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: insecure-app
+  namespace: security-scanning
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: insecure-app
+  template:
+    metadata:
+      labels: {}
+    spec:
+      containers:
+      - name: app
+        image: nginx:1.30                                             # Remove 'latest' and tag the version
+        securityContext:
+          privileged: false                                           # Disable privilege
+          readOnlyRootFilesystem: true                                # readOnlyRootFilesystem to 'true'
+          allowPrivilegeEscalation: false                             # allowPrivilegeEscalation: false
+          runAsNonRoot: true                                          # No 'root' user
+          runAsUser: 1000                                             # specific UID
+          capabilities:
+            drop:
+            - ALL                                                       # Drop all Linux capabilities
+        resources:                                                    # Resource Quota
+          requests:
+            memory: "64Mi"
+            cpu: "250m"
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+        ports:
+        - containerPort: 80
+```

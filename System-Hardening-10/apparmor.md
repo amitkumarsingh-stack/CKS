@@ -161,3 +161,68 @@ This confirms the AppArmor profile is working correctly — it's denying all fil
 1. Using the filename instead of the profile name in the Deployment spec
 2. Forgetting to run apparmor_parser after copying the file to the node
 3. Forgetting the nodeSelector — without it the pod might land on a node without the profile and fail to schedule or use wrong profile
+----------
+
+**Question 2:**
+A deployment named frontend in the ``apparmor-demo`` namespace requires additional security isolation. An AppArmor profile has been created at ``/etc/apparmor.d/containers/restricted-frontend`` with the following security restrictions:
+1. Prevents the container from writing to ``/etc/``, ``/bin/``, ``/sbin/``, ``/usr/bin/``, and ``/usr/sbin/`` directories
+2. Allows network access only on ``TCP`` and ``UDP`` protocols
+3. Blocks raw socket access
+4. Allows write access only to ``/tmp/`` directory
+5. Prevents capability escalation
+
+Your tasks:
+1. Load the AppArmor profile using apparmor_parser
+2. Configure the deployment to use the AppArmor profile using the securityContext field (not annotations)
+
+Configuration Details:
+* Container name: ``web``
+* AppArmor profile type: ``Localhost``
+* ``LocalhostProfile: restricted-frontend`` (just the profile name, not localhost/restricted-frontend)
+
+Use the modern securityContext approach instead of deprecated annotations.
+
+## Solution
+
+**Step 1 — Verify the AppArmor profile exists**
+```
+cat /etc/apparmor.d/containers/restricted-frontend
+```
+
+**Step 2 — Load the AppArmor profile**
+```
+apparmor_parser -q /etc/apparmor.d/containers/restricted-frontend
+```
+
+**Step 3 — Verify profile is loaded**
+```
+aa-status | grep restricted-frontend
+```
+
+**Step 4 — Check the existing deployment**
+```
+kubectl get deployment frontend -n apparmor-demo -o yaml
+```
+
+**Step 5 — Patch the deployment with AppArmor securityContext**
+```
+kubectl patch deployment frontend -n apparmor-demo \
+  --type=strategic -p='
+spec:
+  template:
+    spec:
+      containers:
+      - name: web
+        securityContext:
+          appArmorProfile:
+            type: Localhost
+            localhostProfile: restricted-frontend
+```
+
+**Step 6 — Test the restrictions work**
+```
+# Writing to /etc/ should be BLOCKED
+kubectl exec -n apparmor-demo deployment/frontend -- \
+  touch /etc/test.txt
+# Expected: Permission denied
+```

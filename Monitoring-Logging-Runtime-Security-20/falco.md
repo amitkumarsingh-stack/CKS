@@ -217,3 +217,63 @@ Then check Falco logs for alerts
 falco -U | tail -20 | grep "MINING_ALERT"
 ```
 ------------------------------------------------------------
+**Question 5:**
+
+A Pod is behaving improperly and poses a security threat to the system.
+A Pod belonging to the application analytics is abnormal. It is reading sensitive credential data by accessing the file ``/etc/shadow``.
+First, identify the misbehaving Pod that is accessing ``/etc/shadow``.
+Next, scale the Deployment of the misbehaving Pod down to zero replicas.
+
+Notes:
+* Do not modify anything else in that Deployment besides scaling replicas.
+* Do not modify any other Deployments.
+* Do not delete any Deployments.
+
+## Solution
+
+**Step 1: Write a custom Falco Rule**
+You can look at /etc/falco/falco_rules.yaml for template examples of rule structure.
+```
+# Your custom rules!
+- list: shadow-file
+  items: [/etc/shadow]
+
+- rule: shadow-read
+  desc: shadow-read
+  condition: >
+    fd.name in (shadow-file)
+  output: >
+    Sensitive file accessed (container_id=%container.id)
+  priority: NOTICE
+  tags: [file]
+```
+
+**Step 2: Run Falco for 30 seconds to capture events**
+```
+falco -M 30 -r /etc/falco/falco_rules.local.yaml > shadow.log
+```
+
+**Step 3: Check the output for container IDs**
+```
+cat shadow.log
+```
+Sample output:
+```
+11:15:20.180930443: Notice Sensitive file accessed (container_id=a1b2c3d4e5f6)
+11:15:30.184015793: Notice Sensitive file accessed (container_id=a1b2c3d4e5f6)
+```
+
+**Step 4: Find the Pod from the container ID**
+```
+crictl ps | grep a1b2c3d4e5f6
+```
+
+**Step 5: Identify the Deployment**
+```
+kubectl get pod,deploy -n privilege-monitor | grep collector
+```
+
+**Step 6: Scale the Deployment to zero**
+```
+kubectl scale deployment collector -n privilege-monitor --replicas 0
+```

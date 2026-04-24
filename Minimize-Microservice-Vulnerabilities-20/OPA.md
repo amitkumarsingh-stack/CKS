@@ -47,4 +47,74 @@ Error from server ([pod-trusted-images] blacklisted registry:
 very-bad-registry.com/image): admission webhook 
 "validation.gatekeeper.sh" denied the request
 ```
+---------
+**Question 2:**
 
+OPA Gatekeeper is installed to enforce that all pods in the ``gatekeeper-demo`` namespace have resource limits defined. A ConstraintTemplate named ``k8srequiredresources`` is already created that validates CPU and memory limits. Create a Constraint that enforces this policy.
+
+Tasks:
+* Ensure Gatekeeper pods are ready in the ``gatekeeper-system`` namespace
+* Verify the existing ConstraintTemplate ``k8srequiredresources`` is ready
+* Create a Constraint named ``must-have-resources`` that targets the ``gatekeeper-demo`` namespace
+* Test the policy by attempting to create a pod without resource limits
+
+Constraint Requirements:
+* Name: ``must-have-resources``
+* Kind: ``K8sRequiredResources``
+* Target namespace: ``gatekeeper-demo``
+* Parameters: ``limits: true``
+
+## Solution
+
+**Step 1 — Verify Gatekeeper pods are running**
+```
+kubectl get pods -n gatekeeper-system
+# All pods should be Running and Ready
+```
+
+**Step 2 — Verify the ConstraintTemplate exists and is ready**
+```
+kubectl get constrainttemplate k8srequiredresources
+kubectl describe constrainttemplate k8srequiredresources
+```
+
+**Step 3 — Create the Constraint**
+```
+cat <<EOF | kubectl apply -f -
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sRequiredResources
+metadata:
+  name: must-have-resources
+spec:
+  match:
+    kinds:
+    - apiGroups: [""]
+      kinds: ["Pod"]
+    namespaces:
+    - gatekeeper-demo
+  parameters:
+    limits: true
+EOF
+```
+Refer document: https://kubernetes.io/blog/2019/08/06/opa-gatekeeper-policy-and-governance-for-kubernetes/
+
+
+**Step 4 — Test policy — create pod WITHOUT resource limits (should FAIL)**
+```
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-no-limits
+  namespace: gatekeeper-demo
+spec:
+  containers:
+  - name: test
+    image: nginx:alpine
+EOF
+# Expected: admission webhook denied — resource limits required
+```
+
+Note: Why apiVersion: ``constraints.gatekeeper.sh/v1beta1``? The Constraint's apiVersion is always ``constraints.gatekeeper.sh/v1beta1`` and the ``kind`` must exactly match the ``ConstraintTemplate`` name in PascalCase — ``k8srequiredresources`` →`` K8sRequiredResources``.
+
+ConstraintTemplate vs Constraint: The ConstraintTemplate defines the policy logic (Rego code), while the Constraint defines where and how to apply that policy. Think of ConstraintTemplate as a class and Constraint as an instance of that class.

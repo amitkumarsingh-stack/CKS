@@ -88,6 +88,67 @@ kubectl get pod secure-app -n secure-runtime
 # Check nginx is serving content
 kubectl exec -n secure-runtime secure-app -- curl -s localhost:80
 ```
+--------------------------
+**Question 2:**
+A security audit identified that containers in the ``secure-runtime`` namespace could be vulnerable to process debugging attacks. There is already a pod named ``secure-app running`` in this namespace.
 
+Your tasks:
 
+1. Create a custom seccomp profile at ``/var/lib/kubelet/seccomp/profiles/block-debug.json`` with:
+* defaultAction: ``SCMP_ACT_ALLOW`` (allow all syscalls by default)
+* Block specific syscalls: ``ptrace and process_vm_readv``
+* Use ``SCMP_ACT_ERRNO`` action for the blocked syscalls
+2. Recreate the ``secure-app`` pod to use this custom seccomp profile:
+* seccompProfile ``type: Localhost``
+* localhostProfile: ``profiles/block-debug.json``
+3. Ensure the pod remains functional and can still serve nginx content
+
+Note: Since you cannot modify a running pod's security context, you must delete and recreate the pod.
+
+**Step 1: Create the custom seccomp profile**
+```
+sudo mkdir -p /var/lib/kubelet/seccomp/profiles
+
+sudo tee /var/lib/kubelet/seccomp/profiles/block-debug.json <<EOF
+{
+  "defaultAction": "SCMP_ACT_ALLOW",
+  "syscalls": [
+    {
+      "names": ["ptrace", "process_vm_readv"],
+      "action": "SCMP_ACT_ERRNO"
+    }
+  ]
+}
+EOF
+```
+Refer document: https://kubernetes.io/docs/tutorials/security/seccomp/#download-profiles
+
+**Step 2: Recreate the secure-app pod with the seccomp profile**
+```
+kubectl get pod secure-app -n secure-runtime -o yaml > secure-app.yaml
+```
+
+**Step 3: Edit (or create) the pod manifest and add the seccomp profile under securityContext:**
+```
+apiVersion: v1
+kind: Pod
+metadata:
+  name: secure-app
+  namespace: secure-runtime
+spec:
+  securityContext:
+    seccompProfile:
+      type: Localhost
+      localhostProfile: profiles/block-debug.json
+  containers:
+  - name: nginx
+    image: nginx
+    ports:
+    - containerPort: 80
+```
+
+**Step 4: Verify the pod is functional**
+```
+kubectl get pods -n secure-runtime
+```
 

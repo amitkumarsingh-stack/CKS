@@ -568,3 +568,52 @@ wget -qO- --timeout=5 https://192.168.1.1
 # HTTP port 80 — should be BLOCKED
 wget -qO- --timeout=5 http://google.com
 ```
+-----------------------
+**Question 7**
+
+Secure the Kubernetes Dashboard deployment by implementing network segmentation:
+Create a NetworkPolicy named ``restrict-dashboard-access`` in the ``kubernetes-dashboard`` namespace with the following specifications:
+* Apply to all pods with label ``k8s-app: kubernetes-dashboard``
+* Only allow ingress traffic from within the same namespace (kubernetes-dashboard)
+* Only allow TCP traffic on port 8443
+* Block all other ingress traffic
+
+This will restrict dashboard access to only pods within the dashboard namespace.
+
+**Step 1 — Create the NetworkPolicy**
+```
+cat <<EOF | kubectl apply -f -
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: restrict-dashboard-access
+  namespace: kubernetes-dashboard
+spec:
+  podSelector:
+    matchLabels:
+      k8s-app: kubernetes-dashboard
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kubernetes-dashboard
+    ports:
+    - protocol: TCP
+      port: 8443
+EOF
+```
+
+**Step 2 — Test ingress is allowed from same namespace**
+```
+# Create a test pod in kubernetes-dashboard namespace
+kubectl run test-allowed \
+  --image=busybox \
+  -n kubernetes-dashboard \
+  -- sleep 3600
+
+# Test connection to dashboard (should WORK)
+kubectl exec -n kubernetes-dashboard test-allowed -- \
+  wget -qO- --timeout=5 https://kubernetes-dashboard:8443
+```

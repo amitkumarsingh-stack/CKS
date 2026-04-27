@@ -164,7 +164,7 @@ This confirms the AppArmor profile is working correctly — it's denying all fil
 ----------
 
 **Question 2:**
-A deployment named frontend in the ``apparmor-demo`` namespace requires additional security isolation. An AppArmor profile has been created at ``/etc/apparmor.d/containers/restricted-frontend`` with the following security restrictions:
+A deployment named ``frontend`` in the ``apparmor-demo`` namespace requires additional security isolation. An AppArmor profile has been created at ``/etc/apparmor.d/containers/restricted-frontend`` with the following security restrictions:
 1. Prevents the container from writing to ``/etc/``, ``/bin/``, ``/sbin/``, ``/usr/bin/``, and ``/usr/sbin/`` directories
 2. Allows network access only on ``TCP`` and ``UDP`` protocols
 3. Blocks raw socket access

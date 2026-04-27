@@ -493,4 +493,78 @@ kubectl exec -n node-security deployment/metadata-test-pod -- \
 
 # Expected: successful DNS resolution — ALLOWED
 ```
+-------------------
+**Question 6**
 
+Create a NetworkPolicy in the ``egress-control`` namespace that restricts egress traffic to only allow:
+
+1. DNS queries (UDP/TCP port 53) to any destination
+2. HTTPS traffic (TCP port 443) to public IP ranges (excluding private IPs)
+3, Block all other egress traffic
+
+NetworkPolicy Requirements:
+* Name: ``restrict-egress``
+* Namespace: ``egress-control``
+* Apply to all pods in the namespace (empty podSelector)
+* Use CIDR 0.0.0.0/0 with exceptions for private IP ranges:
+  * 10.0.0.0/8
+  * 172.16.0.0/12
+  * 192.168.0.0/16
+
+The policy should apply to all pods in the namespace. Use ipBlock with except to exclude private IPs.
+
+**Step 1: Create Network Policy**
+```
+cat <<EOF | kubectl apply -f -
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: restrict-egress
+  namespace: egress-control
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  # Rule 1 — Allow DNS (UDP + TCP port 53) to anywhere
+  - ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+
+  # Rule 2 — Allow HTTPS (TCP port 443) to public IPs only
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+    ports:
+    - protocol: TCP
+      port: 443
+EOF
+```
+
+**Step 2: Test Network Policy**
+```
+# Run a test pod
+kubectl run test --rm -it \
+  --image=busybox \
+  -n egress-control -- sh
+
+# Inside pod:
+
+# DNS — should WORK
+nslookup google.com
+
+# HTTPS to public IP — should WORK
+wget -qO- --timeout=5 https://google.com
+
+# HTTPS to private IP — should be BLOCKED
+wget -qO- --timeout=5 https://192.168.1.1
+
+# HTTP port 80 — should be BLOCKED
+wget -qO- --timeout=5 http://google.com
+```

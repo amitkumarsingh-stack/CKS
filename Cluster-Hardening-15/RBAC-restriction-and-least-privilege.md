@@ -327,4 +327,117 @@ kubectl auth can-i list persistentvolumeclaims -n backup-db --as=maria
 kubectl auth can-i get pods -n backup-db --as=maria          # should be NO
 kubectl auth can-i delete persistentvolumeclaims -n backup-db --as=maria # NO
 ```
+--------------------------
+**Question 4:**
+
+A security team needs ``cross-namespace monitoring`` capabilities with restricted permissions. Create RBAC resources that allow a ServiceAccount to read pods across multiple namespaces while following the principle of least privilege.
+
+Requirements:
+1. Create a ServiceAccount named ``cluster-monitor`` in the monitoring-ns namespace
+2. Create a ClusterRole named ``pod-reader-clusterrole`` that allows ``get``, ``list``, and ``watch`` operations on pods
+3. Grant the ServiceAccount access only in the ``monitoring-ns`` and ``apparmor-demo`` namespaces
+4. Label the ``monitoring-ns and apparmor-demo`` namespaces with ``monitoring: enabled``
+5. Create a RoleBinding named ``cross-namespace-monitor`` in each of the allowed namespaces (monitoring-ns and apparmor-demo) that references the ClusterRole
+
+Note: Use namespace-scoped RoleBindings (not ClusterRoleBinding) to restrict access to only the specified namespaces.
+
+**Step 1 — Create the ServiceAccount**
+```
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cluster-monitor
+  namespace: monitoring-ns
+EOF
+```
+
+**Step 2 — Create the ClusterRole**
+```
+cat <<EOF | kubectl apply -f -
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: pod-reader-clusterrole
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
+EOF
+```
+
+**Step 3 — Label both namespaces**
+```
+kubectl label namespace monitoring-ns monitoring=enabled --overwrite
+kubectl label namespace apparmor-demo monitoring=enabled --overwrite
+
+# Verify
+kubectl get namespace monitoring-ns apparmor-demo --show-labels
+```
+
+**Step 4 — Create RoleBinding in monitoring-ns**
+```
+cat <<EOF | kubectl apply -f -
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cross-namespace-monitor
+  namespace: monitoring-ns
+subjects:
+- kind: ServiceAccount
+  name: cluster-monitor
+  namespace: monitoring-ns
+roleRef:
+  kind: ClusterRole
+  apiGroup: rbac.authorization.k8s.io
+  name: pod-reader-clusterrole
+EOF
+```
+
+**Step 5 — Create RoleBinding in apparmor-demo**
+```
+cat <<EOF | kubectl apply -f -
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cross-namespace-monitor
+  namespace: apparmor-demo
+subjects:
+- kind: ServiceAccount
+  name: cluster-monitor
+  namespace: monitoring-ns
+roleRef:
+  kind: ClusterRole
+  apiGroup: rbac.authorization.k8s.io
+  name: pod-reader-clusterrole
+EOF
+```
+
+**Step 6 — Test permissions with auth can-i**
+```
+# Should be YES in monitoring-ns
+kubectl auth can-i get pods -n monitoring-ns \
+  --as=system:serviceaccount:monitoring-ns:cluster-monitor
+
+kubectl auth can-i list pods -n monitoring-ns \
+  --as=system:serviceaccount:monitoring-ns:cluster-monitor
+
+kubectl auth can-i watch pods -n monitoring-ns \
+  --as=system:serviceaccount:monitoring-ns:cluster-monitor
+
+# Should be YES in apparmor-demo
+kubectl auth can-i get pods -n apparmor-demo \
+  --as=system:serviceaccount:monitoring-ns:cluster-monitor
+
+# Should be NO in other namespaces
+kubectl auth can-i get pods -n default \
+  --as=system:serviceaccount:monitoring-ns:cluster-monitor
+
+kubectl auth can-i get pods -n kube-system \
+  --as=system:serviceaccount:monitoring-ns:cluster-monitor
+
+# Should be NO for other resources
+kubectl auth can-i get secrets -n monitoring-ns \
+  --as=system:serviceaccount:monitoring-ns:cluster-monitor
+```
 

@@ -216,5 +216,99 @@ Check if new pods are being created
 ```
 kubectl get pods -n production -w
 ```
+--------------------------
+**Question 3**
+
+Create a pod named ``secure-pod`` in the ``security-context-demo`` namespace. This pod requires enhanced security configurations.
+Pod Requirements:
+* Pod name: ``secure-pod``
+* Namespace: ``security-context-demo``
+* Label: ``app: secure-pod``
+* Image: ``nginxinc/nginx-unprivileged:alpine``
+* Container port: ``8080``
+
+Security Context Requirements:
+* Pod-level: Set ``runAsNonRoot: true``, ``runAsUser: 1001``, ``runAsGroup: 1001``
+* Container-level: ``Set allowPrivilegeEscalation: false``
+* Container-level: Drop all Linux capabilities (capabilities.drop: ["ALL"])
+
+**Step 1: Create a secure Pod**
+```
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: secure-pod
+  namespace: security-context-demo
+  labels:
+    app: secure-pod
+spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1001
+    runAsGroup: 1001
+  containers:
+  - name: secure-pod
+    image: nginxinc/nginx-unprivileged:alpine
+    ports:
+    - containerPort: 8080
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+EOF
+```
+
+**Question 4**
+
+Migrate the existing deployment ``legacy-app`` in the ``pss-migration`` namespace to comply with the Pod Security Standards restricted policy level.
+Current Issues:
+* ``privileged: true`` (must be false)
+* ``runAsUser: 0`` (must be non-root)
+
+Required Changes:
+* Set ``privileged: false``
+* Set ``runAsNonRoot: true`` at container level
+* Set ``allowPrivilegeEscalation: false``
+* Drop all ``capabilities`` (capabilities.drop: ["ALL"])
+* Use ``runAsUser: 101`` (nginx user)
+
+Ensure the deployment maintains functionality on port 8080 after migration.
+The deployment uses the nginx-unprivileged image which runs as UID 101 by default.
+
+**Step 1 — Patch the deployment**
+```
+kubectl patch deployment legacy-app -n pss-migration \
+  --type=strategic -p='
+spec:
+  template:
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: legacy-app
+        securityContext:
+          privileged: false
+          runAsNonRoot: true
+          runAsUser: 101
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+'
+```
+**Note:** Make sure to include ``seccompProfile`` to ``RutimeDefault``
+
+**Step 2 — Verify running as UID 101**
+```
+kubectl exec -n pss-migration deployment/legacy-app -- id
+# Expected: uid=101 gid=101
+```
+
 
 

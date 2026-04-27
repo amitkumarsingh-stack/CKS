@@ -156,3 +156,75 @@ EOF
 # Check audit mode is working
 kubectl get events -n default | grep PodSecurity
 ```
+-----------
+**Question 3:**
+
+Create Security Context Constraints using Pod Security Standards for the ``scc-demo`` namespace. Implement the following restrictions:
+1. Prevent privileged containers
+2. Require runAsNonRoot
+3. Block host namespaces
+4. Require seccomp profiles
+5. Restrict capabilities
+
+Apply these restrictions using Pod Security Standards labels with the following requirements:
+* Enforce level: ``restricted``
+* Enforce version: ``latest``
+
+The restricted profile will enforce most security requirements automatically.
+
+**Step 1 — Apply Pod Security Standards labels**
+```
+kubectl label namespace scc-demo \
+  pod-security.kubernetes.io/enforce=restricted \
+  pod-security.kubernetes.io/enforce-version=latest \
+  pod-security.kubernetes.io/audit=restricted \
+  pod-security.kubernetes.io/audit-version=latest \
+  pod-security.kubernetes.io/warn=restricted \
+  pod-security.kubernetes.io/warn-version=latest \
+  --overwrite
+```
+
+**Step 2 — Test restrictions are enforced**
+Test 1 — Privileged container (should be BLOCKED)
+```
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-privileged
+  namespace: scc-demo
+spec:
+  containers:
+  - name: test
+    image: nginx
+    securityContext:
+      privileged: true
+EOF
+# Expected: Error — violates PodSecurity restricted
+```
+
+Test 2 — Compliant pod (should be ALLOWED)
+```
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-compliant
+  namespace: scc-demo
+spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+  - name: test
+    image: nginxinc/nginx-unprivileged:alpine
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+EOF
+# Expected: pod created successfully
+```
